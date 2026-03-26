@@ -29,7 +29,7 @@ root_dir = Path(__file__).resolve().parent
 # 是否为更新
 isUpdate = False
 
-operation = 'delete_fail_module'
+operation = 'edit_old_module'
 # 'create_module'新建模块模版 'new_module'新建模块 'delete_fail_module' 删除打包失败模块  'edit_old_module' 打包旧模块   'review_module' 提审代码
 # 'delete_module' 删除指定模块
 
@@ -231,7 +231,7 @@ def delete_module(driver, shopId):
 
 
 
-# 失败删除
+# 失败删除并重新创建
 def delete_fail_module(driver):
     try:
         # 等待页面加载完成（等待模块列表出现）
@@ -244,12 +244,45 @@ def delete_fail_module(driver):
 
         time.sleep(1)  # 额外等待，确保页面完全渲染
 
+        # 从当前 URL 获取 templateId，然后从 shopConfig.json 中获取 shopId
+        current_url = driver.current_url
+        template_id = None
+        if "templateId=" in current_url:
+            from urllib.parse import parse_qs, urlparse
+            parsed_url = urlparse(current_url)
+            params = parse_qs(parsed_url.query)
+            template_id = params.get("templateId", [None])[0]
+
+        # 从 shopConfig.json 中获取 shopId
+        shop_id = None
+        if template_id:
+            with open(root_dir / "zipdist" / "shopConfig.json", "r", encoding='utf-8') as f:
+                shop_config = json.load(f)
+            for config_item in shop_config:
+                if config_item.get("templateId") == template_id:
+                    shop_id = config_item.get("shopId")
+                    break
+
+        if not shop_id:
+            print(f"未能获取 shopId，当前 URL: {current_url}, templateId: {template_id}")
+            return
+
+        print(f"当前模板 shopId: {shop_id}, templateId: {template_id}")
+
+        # 读取 moduleConfig.json 获取模块配置
+        with open(root_dir / "moduleConfig.json", "r", encoding='utf-8') as f:
+            module_config = json.load(f)
+
+        # 创建模块名称到配置的映射
+        module_config_map = {item["name"]: item for item in module_config}
+
         # 使用其他方法查找状态为"打包失败"的模块
         # 1. 先找到所有 li 元素
         li_elements = driver.find_elements(By.TAG_NAME, "li")
 
         print(f"找到 {len(li_elements)} 个 li 元素")
         fail_count = 0
+        recreate_count = 0
 
         for li_element in li_elements:
             # 2. 使用 find_elements (复数) 避免抛出异常，找不到时返回空列表
@@ -258,6 +291,11 @@ def delete_fail_module(driver):
             if not status_spans:
                 # 当前模块不是"打包失败"状态，跳过
                 continue
+
+            # 获取模块名称
+            module_name_span = li_element.find_elements(By.CLASS_NAME, "cd-item-name")
+            module_name = module_name_span[0].get_attribute("title") if module_name_span else "未知模块"
+            print(f"发现打包失败的模块：{module_name}")
 
             try:
                 # 3. 找到删除按钮并点击
@@ -273,7 +311,7 @@ def delete_fail_module(driver):
 
                 # 点击删除按钮
                 delete_btns[0].click()
-                print("成功点击删除按钮")
+                print(f"已点击删除按钮，模块：{module_name}")
                 fail_count += 1
 
                 # 4. 等待弹窗出现并点击确认
@@ -291,16 +329,111 @@ def delete_fail_module(driver):
                     print("已点击确认按钮")
                     time.sleep(1)
 
+                    # 5. 删除成功后，重新创建该模块
+                    if module_name in module_config_map:
+                        print(f"开始重新创建模块：{module_name}")
+                        recreate_module(driver, shop_id, module_config_map[module_name])
+                        recreate_count += 1
+                    else:
+                        print(f"未在 moduleConfig.json 中找到模块配置：{module_name}")
+
                 except TimeoutException:
                     print("弹窗未出现或超时")
 
             except Exception as e:
                 print(f"删除打包失败模块时出错：{e}")
 
-        print(f"共删除 {fail_count} 个打包失败的模块")
+        print(f"共删除 {fail_count} 个打包失败的模块，重新创建 {recreate_count} 个")
 
     except Exception as e:
         print(f"自动化过程出错：{e}")
+
+
+# 重新创建模块
+def recreate_module(driver, shop_id, module_item):
+    """根据模块配置重新创建模块"""
+    try:
+        # 等待遮罩层消失
+        try:
+            WebDriverWait(driver, 10).until(
+                EC.invisibility_of_element_located((By.CLASS_NAME, "cd-modal-overlay"))
+            )
+        except TimeoutException:
+            print("遮罩层未消失，尝试强制点击")
+
+        # 点击"添加模块"按钮
+        add_module_button = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CLASS_NAME, "btn-green-link"))
+        )
+        try:
+            add_module_button.click()
+        except Exception as e:
+            print("点击被拦截，尝试 JS 点击")
+            driver.execute_script("arguments[0].click();", add_module_button)
+
+        time.sleep(1)
+
+        # 填写模块名称
+        driver.find_element(By.ID, "moduleName").send_keys(module_item["name"])
+        driver.find_element(By.ID, "moduleDesc").send_keys("  ")
+        driver.find_element(By.ID, "accessKeyId").send_keys(accessKeyId)
+        driver.find_element(By.ID, "accessKeySecret").send_keys(accessKeySecret)
+
+        # 上传文件
+        dynamic_path = root_dir / "zipdist" / shop_id / module_item["fileName"]
+        dynamic_path_str = str(dynamic_path)
+        driver.find_element(By.ID, "fileUpload").send_keys(dynamic_path_str)
+
+        # 设置图片
+        driver.execute_script(f"""
+            var div = document.querySelector('.J_imagePanel');
+            var imgUrl = '{module_item["img"]}';
+            div.setAttribute('data-url', imgUrl);
+            div.style.backgroundImage = 'url(' + imgUrl + ')';
+        """)
+
+        # 选择模块类型（会员卡/非会员卡）
+        module_select = driver.find_element(By.CLASS_NAME, "cd-select-el")
+        module_select.click()
+        is_member_card = 4 if module_item.get("isMemberCard", False) else 5
+        target_option = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.XPATH, f"//div[@class='sim-list']//li[@str='{is_member_card}']"))
+        )
+        target_option.click()
+
+        # 选择 Taro 版本
+        time.sleep(1)
+        all_selects = driver.find_elements(By.XPATH, "//div[contains(@class, 'cd-module-type-select')]")
+
+        taro_version_dropdown = None
+        for s in all_selects:
+            text = s.text
+            if "新版" in text or "v4" in text or "v3" in text:
+                taro_version_dropdown = s.find_element(By.CLASS_NAME, "cd-select-el")
+                break
+
+        if not taro_version_dropdown:
+            taro_version_dropdown = all_selects[1].find_element(By.CLASS_NAME, "cd-select-el")
+
+        driver.execute_script("arguments[0].scrollIntoView(true);", taro_version_dropdown)
+        time.sleep(0.5)
+        taro_version_dropdown.click()
+        time.sleep(0.5)
+
+        # 选择 3.5.4 版本
+        target_option = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.XPATH, "//div[contains(@class, 'sim-list')]//li[contains(@str, '3.5.4')]"))
+        )
+        target_option.click()
+
+        # 点击确认按钮
+        driver.find_element(By.CLASS_NAME, "J_btnOK").click()
+        time.sleep(2)
+
+        print(f"成功重新创建模块：{module_item['name']}")
+
+    except Exception as e:
+        print(f"重新创建模块失败 - {module_item['name']}: {e}")
 
 
 
@@ -405,20 +538,16 @@ def edit_old_module(driver,shopId):
         moduleConfig = json.load(file)
         for item in moduleConfig:
             try:
-                # module_element = WebDriverWait(driver, 10).until(
-                #     EC.presence_of_element_located((By.XPATH, f"//div[@data-modulename='{item['name']}']"))
-                # )
-
                 # saas
-                # name = item['name']
-                # if "会员卡" in name:
-                #     xpath_expr = "//div[contains(@data-modulename, '会员卡')]"
-                # else:
-                #     xpath_expr = f"//div[@data-modulename='{name}']"
+                name = item['name']
+                if "会员卡" in name:
+                    xpath_expr = "//div[contains(@data-modulename, '会员卡')]"
+                else:
+                    xpath_expr = f"//div[@data-modulename='{name}']"
 
                 # 京通
-                name = item['name']
-                xpath_expr = f"//div[@data-modulename='{name}']"
+                # name = item['name']
+                # xpath_expr = f"//div[@data-modulename='{name}']"
 
                 module_element = WebDriverWait(driver, 10).until(
                     EC.presence_of_element_located((By.XPATH, xpath_expr))
