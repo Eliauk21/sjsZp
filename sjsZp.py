@@ -29,8 +29,9 @@ root_dir = Path(__file__).resolve().parent
 # 是否为更新
 isUpdate = False
 
-operation = 'create_module'
-# 'create_module'新建模块模版  'edit_old_module' 'new_module'  'review_module' 'delete_module' 'delete_fail_module'
+operation = 'delete_fail_module'
+# 'create_module'新建模块模版 'new_module'新建模块 'delete_fail_module' 删除打包失败模块  'edit_old_module' 打包旧模块   'review_module' 提审代码
+# 'delete_module' 删除指定模块
 
 # 编辑模板
 def edit_template(driver):
@@ -233,56 +234,73 @@ def delete_module(driver, shopId):
 # 失败删除
 def delete_fail_module(driver):
     try:
+        # 等待页面加载完成（等待模块列表出现）
+        try:
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.TAG_NAME, "li"))
+            )
+        except TimeoutException:
+            print("等待模块列表加载超时")
+
+        time.sleep(1)  # 额外等待，确保页面完全渲染
+
         # 使用其他方法查找状态为"打包失败"的模块
         # 1. 先找到所有 li 元素
         li_elements = driver.find_elements(By.TAG_NAME, "li")
 
         print(f"找到 {len(li_elements)} 个 li 元素")
+        fail_count = 0
 
         for li_element in li_elements:
+            # 2. 使用 find_elements (复数) 避免抛出异常，找不到时返回空列表
+            status_spans = li_element.find_elements(By.XPATH, ".//span[@class='cd-item-status' and @data-type='4']")
+
+            if not status_spans:
+                # 当前模块不是"打包失败"状态，跳过
+                continue
+
             try:
-                # 2. 在每个 li 元素中查找 span.cd-item-status[data-type='4']
-                status_span = li_element.find_element(By.XPATH, ".//span[@class='cd-item-status' and @data-type='4']")
+                # 3. 找到删除按钮并点击
+                delete_btns = li_element.find_elements(By.XPATH, ".//div[contains(@class, 'J_delete')]")
 
-                if status_span:
-                    # 3. 找到删除按钮并点击
-                    delete_btn = li_element.find_element(By.XPATH, ".//div[contains(@class, 'J_delete')]")
+                if not delete_btns:
+                    print("未找到删除按钮，跳过")
+                    continue
 
-                    # 滚动到元素位置
-                    driver.execute_script("arguments[0].scrollIntoView();", delete_btn)
-                    time.sleep(0.5)
+                # 滚动到元素位置
+                driver.execute_script("arguments[0].scrollIntoView();", delete_btns[0])
+                time.sleep(0.5)
 
-                    # 点击删除按钮
-                    delete_btn.click()
-                    print("成功点击删除按钮")
+                # 点击删除按钮
+                delete_btns[0].click()
+                print("成功点击删除按钮")
+                fail_count += 1
 
-                    # 4. 等待弹窗出现并点击确认
-                    try:
-                        # 等待弹窗出现
-                        WebDriverWait(driver, 5).until(
-                            EC.presence_of_element_located((By.CLASS_NAME, "cd-modal"))
-                        )
+                # 4. 等待弹窗出现并点击确认
+                try:
+                    # 等待弹窗出现
+                    WebDriverWait(driver, 5).until(
+                        EC.presence_of_element_located((By.CLASS_NAME, "cd-modal"))
+                    )
 
-                        # 点击确认按钮
-                        confirm_btn = WebDriverWait(driver, 5).until(
-                            EC.element_to_be_clickable((By.XPATH, "//a[@class='cd-btn-ok J_btnOK']"))
-                        )
-                        confirm_btn.click()
-                        print("已点击确认按钮")
+                    # 点击确认按钮
+                    confirm_btn = WebDriverWait(driver, 5).until(
+                        EC.element_to_be_clickable((By.XPATH, "//a[@class='cd-btn-ok J_btnOK']"))
+                    )
+                    confirm_btn.click()
+                    print("已点击确认按钮")
+                    time.sleep(1)
 
-                    except TimeoutException:
-                        print("弹窗未出现或超时")
+                except TimeoutException:
+                    print("弹窗未出现或超时")
 
             except Exception as e:
-                print(f"自动化过程出错：{e}")
+                print(f"删除打包失败模块时出错：{e}")
+
+        print(f"共删除 {fail_count} 个打包失败的模块")
 
     except Exception as e:
         print(f"自动化过程出错：{e}")
-
-    finally:
-        # 可选：保持浏览器打开以便查看结果
-        # input("按 Enter 键关闭浏览器...")
-        driver.quit()
 
 
 
