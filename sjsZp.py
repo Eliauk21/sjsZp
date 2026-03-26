@@ -1,0 +1,442 @@
+import json
+import time
+from pathlib import Path
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait, Select
+# 调用浏览器
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.edge.options import Options
+from selenium.webdriver.edge.service import Service
+
+# 配置信息
+LOGIN_URL = "https://passport.jd.com/new/login.aspx?ReturnUrl=https%3A%2F%2Fsjs-zx.jd.com"
+INDEX_URL = "https://sjs-zx.jd.com/index.html"
+TARGET_URL = "https://sjs-zx.jd.com/template/modularTemplate.html"
+# 编辑模板页面
+TEMPLATEID_URL = "https://sdk.jd.com/nm?tpGrade=3&templateId="# templateId 为模板号.tpGrade 为 1 是普通模块，3 时为定制模板
+# 审核模板页面
+TEMPLATEID_PREVIEW_URL = "https://sjs-zx.jd.com/template/applyAudit.html?templateId="# templateId 为模板号.tpGrade 为 1 是普通模块，3 时为定制模板
+
+accessKeyId="DC2A7D48BBAF83143873C80869FDE38B"
+accessKeySecret="02DB4A15CEDF23B8CE32E03EF06E0A73"
+
+USERNAME = "陆泽科技"
+PASSWORD = "bA6#aA1$pG2%"
+root_dir = Path(__file__).resolve().parent
+# root_dir='D:\\project\\ai-sms-review\\sjsZp\\'
+# 是否为更新
+isUpdate = False
+
+operation = 'new_module'
+# 'edit_old_module' 'new_module'  'review_module' 'delete_module' 'delete_fail_module' 'create_module'
+
+# 编辑模板
+def edit_template(driver):
+    # 读取 JSON 文件并循环
+    with open(root_dir / "zipdist" /"shopConfig.json", "r", encoding='utf-8') as file:
+        shopConfig = json.load(file)
+
+    # 遍历 json 格式的 shopConfig
+    for item in shopConfig:
+            templateId = item["templateId"]
+
+            if operation == "create_module":
+                # create_module 不需要 templateId，直接导航到目标页面
+                driver.get(TARGET_URL)
+                create_module(driver)
+            elif operation == "edit_old_module":
+                driver.get(TEMPLATEID_URL + templateId)
+                edit_old_module(driver, item["shopId"])
+            elif operation == "new_module":
+                driver.get(TEMPLATEID_URL + templateId)
+                new_module(driver, item["shopId"])
+            elif operation == "delete_module":
+                driver.get(TEMPLATEID_URL + templateId)
+                delete_module(driver, item["shopId"])
+            elif operation == "review_module":
+                driver.get(TEMPLATEID_URL + templateId)
+                review_module(driver)
+            elif operation == "delete_fail_module":
+                driver.get(TEMPLATEID_URL + templateId)
+                delete_fail_module(driver)
+            else:
+                print(f"未知的操作：{operation}")
+
+# 创建模块（为每个店铺配置价格模板）
+def create_module(driver):
+    # 读取 JSON 配置文件
+    with open(root_dir / "zipdist" / "shopConfig.json", "r", encoding='utf-8') as file:
+        shop_config = json.load(file)
+
+    # 遍历每个店铺配置
+    for item in shop_config:
+        shop_name = item["shopName"]
+
+        try:
+            # 1. 点击 btn-green-link 按钮
+            edit_button = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.CLASS_NAME, "btn-green-link"))
+            )
+            edit_button.click()
+            time.sleep(1)  # 等待弹窗出现
+
+            # 2. 输入 shopName 到 tp-name J_tpName（先输入名称）
+            tp_name_input = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "tp-name"))
+            )
+            tp_name_input.clear()
+            tp_name_input.send_keys(shop_name)
+            time.sleep(0.5)
+
+            # 3. 在弹窗中选择 value=3 的 option（tp-price J_tpType）
+            tp_type_select = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "tp-price"))
+            )
+            select_element = tp_type_select.find_element(By.TAG_NAME, "select")
+            # 使用 Select 类处理下拉框
+            select = Select(select_element)
+            select.select_by_value("3")
+            time.sleep(0.5)
+
+            # 4. 点击 btn-yellow J-sure 按钮
+            sure_button = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.CLASS_NAME, "btn-yellow"))
+            )
+            sure_button.click()
+            time.sleep(2)  # 等待操作完成
+
+            print(f"已完成店铺配置：{shop_name}")
+
+        except TimeoutException as e:
+            print(f"操作超时 - 店铺：{shop_name}, 错误：{str(e)}")
+        except Exception as e:
+            print(f"创建模块失败 - 店铺：{shop_name}, 错误：{str(e)}")
+
+# 提交审核
+def review_module(driver):
+    try:
+        edit_button = driver.find_element(By.CLASS_NAME, "J_save")
+        if edit_button:
+            edit_button.click()
+
+            # 等待新窗口打开（假设点击后弹出新窗口）
+            WebDriverWait(driver, 10).until(EC.new_window_is_opened)
+
+            # 添加 5 秒的等待时间
+            time.sleep(1)  # 在提交前等待 1 秒
+
+            # 等待提交按钮出现并点击
+            submit_button = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.ID, "J_submit"))
+            )
+            submit_button.click()
+            time.sleep(5)
+
+    except Exception as e:
+        print(f"审核模块失败：{str(e)}")
+
+
+# 失败删除
+def delete_module(driver, shopId):
+    try:
+        time.sleep(1)
+
+        li_elements = driver.find_elements(By.TAG_NAME, "li")
+
+        # print(f"找到 {len(li_elements)} 个 li 元素")
+
+        for li_element in li_elements:
+            # 使用 find_elements 避免抛出异常
+            status_spans = li_element.find_elements(By.XPATH, ".//span[@class='cd-item-name' and @title='阶梯礼']")
+
+            if status_spans:
+                delete_btns = li_element.find_elements(By.XPATH, ".//div[contains(@class, 'J_delete')]")
+
+                if delete_btns:
+                    time.sleep(0.5)
+                    delete_btns[0].click()
+                    # print("成功点击删除按钮")
+
+                    # 等待弹窗出现并点击确认
+                    try:
+                        time.sleep(1)
+                        confirm_btn = WebDriverWait(driver, 5).until(
+                            EC.element_to_be_clickable((By.XPATH, "//a[@class='cd-btn-ok J_btnOK']"))
+                        )
+                        confirm_btn.click()
+                        # print("已点击确认按钮")
+                        time.sleep(1)
+
+                        # 监控是否出现错误提示
+                        try:
+                            error_span = WebDriverWait(driver, 3).until(
+                                EC.presence_of_element_located((By.XPATH,
+                                                                "//span[@class='cd-text J_text' and contains(text(), '为避续模块后续无法维护')]"))
+                            )
+                            if error_span:
+                                print(f"使用中的模块不允许删除：{shopId}")
+                        except TimeoutException:
+                            # 未出现错误提示，属于正常情况
+                            pass
+
+                        time.sleep(1)
+                    except TimeoutException:
+                        print(f"自动化过程出错：{shopId}")
+                # break  # 找到并处理完成后退出循环
+
+    except Exception as e:
+        print(f"自动化过程出错 final: {shopId}")
+
+
+
+# 失败删除
+def delete_fail_module(driver):
+    try:
+        # 使用其他方法查找状态为"打包失败"的模块
+        # 1. 先找到所有 li 元素
+        li_elements = driver.find_elements(By.TAG_NAME, "li")
+
+        print(f"找到 {len(li_elements)} 个 li 元素")
+
+        for li_element in li_elements:
+            try:
+                # 2. 在每个 li 元素中查找 span.cd-item-status[data-type='4']
+                status_span = li_element.find_element(By.XPATH, ".//span[@class='cd-item-status' and @data-type='4']")
+
+                if status_span:
+                    # 3. 找到删除按钮并点击
+                    delete_btn = li_element.find_element(By.XPATH, ".//div[contains(@class, 'J_delete')]")
+
+                    # 滚动到元素位置
+                    driver.execute_script("arguments[0].scrollIntoView();", delete_btn)
+                    time.sleep(0.5)
+
+                    # 点击删除按钮
+                    delete_btn.click()
+                    print("成功点击删除按钮")
+
+                    # 4. 等待弹窗出现并点击确认
+                    try:
+                        # 等待弹窗出现
+                        WebDriverWait(driver, 5).until(
+                            EC.presence_of_element_located((By.CLASS_NAME, "cd-modal"))
+                        )
+
+                        # 点击确认按钮
+                        confirm_btn = WebDriverWait(driver, 5).until(
+                            EC.element_to_be_clickable((By.XPATH, "//a[@class='cd-btn-ok J_btnOK']"))
+                        )
+                        confirm_btn.click()
+                        print("已点击确认按钮")
+
+                    except TimeoutException:
+                        print("弹窗未出现或超时")
+
+            except Exception as e:
+                print(f"自动化过程出错：{e}")
+
+    except Exception as e:
+        print(f"自动化过程出错：{e}")
+
+    finally:
+        # 可选：保持浏览器打开以便查看结果
+        # input("按 Enter 键关闭浏览器...")
+        driver.quit()
+
+
+
+# 全部模块打包
+def new_module(driver,shopId):
+    # 获取要添加的模块
+    with open("moduleConfig.json", "r", encoding='utf-8') as file:
+        moduleConfig = json.load(file)
+        for item in moduleConfig:
+            try:
+                # 等待遮罩层消失
+                try:
+                    WebDriverWait(driver, 10).until(
+                        EC.invisibility_of_element_located((By.CLASS_NAME, "cd-modal-overlay"))
+                    )
+                except TimeoutException:
+                    print("遮罩层未消失，尝试强制点击")
+
+                # 定位并点击按钮（优先使用显式等待）
+                add_module_button = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.CLASS_NAME, "J_addModule"))
+                )
+                # 尝试正常点击
+                try:
+                    add_module_button.click()
+                except Exception as e:
+                    print("点击被拦截，尝试 JS 点击")
+                    driver.execute_script("arguments[0].click();", add_module_button)
+
+                # driver.find_element(By.CLASS_NAME, "J_addModule").click()
+                # id moduleName 填写模块名称
+                driver.find_element(By.ID, "moduleName").send_keys(item["name"])
+                driver.find_element(By.ID, "moduleDesc").send_keys("  ")
+                driver.find_element(By.ID, "accessKeyId").send_keys(accessKeyId)
+                driver.find_element(By.ID, "accessKeySecret").send_keys(accessKeySecret)
+                # 确保 shopId 是字符串
+                dynamic_path = root_dir / "zipdist" / shopId / item["fileName"]
+
+                # 将 Path 对象转换为字符串（如果需要）
+                dynamic_path_str = str(dynamic_path)
+                #     获取程序根目录
+                driver.find_element(By.ID, "fileUpload").send_keys(dynamic_path_str)
+
+                driver.execute_script(f"""
+                                var div = document.querySelector('.J_imagePanel');
+                                var imgUrl = '{item["img"]}';
+                                div.setAttribute('data-url', imgUrl);
+                                div.style.backgroundImage = 'url(' + imgUrl + ')';
+                            """)
+
+                # 选模块
+                module_select = driver.find_element(By.CLASS_NAME, "cd-select-el")
+                module_select.click()
+                isMemberCard=5
+                if item["isMemberCard"]:
+                    isMemberCard=4
+                target_option = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, f"//div[@class='sim-list']//li[@str='{isMemberCard}']"))
+                )
+                target_option.click()
+
+                # 选版本 - 点击版本选择框
+                time.sleep(1)  # 等待上一个选择完全关闭
+
+                # 查找包含"新版"或"v4"文本的 cd-module-type-select 元素（即 Taro 版本选择器）
+                all_selects = driver.find_elements(By.XPATH, "//div[contains(@class, 'cd-module-type-select')]")
+
+                taro_version_dropdown = None
+                for s in all_selects:
+                    text = s.text
+                    if "新版" in text or "v4" in text or "v3" in text:
+                        taro_version_dropdown = s.find_element(By.CLASS_NAME, "cd-select-el")
+                        break
+
+                if not taro_version_dropdown:
+                    # 备选方案：直接取第二个
+                    taro_version_dropdown = all_selects[1].find_element(By.CLASS_NAME, "cd-select-el")
+
+                driver.execute_script("arguments[0].scrollIntoView(true);", taro_version_dropdown)
+                time.sleep(0.5)
+                taro_version_dropdown.click()
+                time.sleep(0.5)
+                # 选择 3.5.4 版本
+                target_option = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//div[contains(@class, 'sim-list')]//li[contains(@str, '3.5.4')]"))
+                )
+                target_option.click()
+
+                driver.find_element(By.CLASS_NAME, "J_btnOK").click()
+
+                time.sleep(2)
+                print(f"成功创建模块：{item['name']}")
+            except Exception as e:
+                print(f"创建模块失败 - 模块：{item['name']}, 错误：{str(e)}")
+                import traceback
+                traceback.print_exc()
+
+# 编辑旧模块（换图，换文件，打包新版本）
+def edit_old_module(driver,shopId):
+    # 读取 JSON 文件并循环
+    with open("moduleConfig.json", "r", encoding='utf-8') as file:
+        moduleConfig = json.load(file)
+        for item in moduleConfig:
+            try:
+                # module_element = WebDriverWait(driver, 10).until(
+                #     EC.presence_of_element_located((By.XPATH, f"//div[@data-modulename='{item['name']}']"))
+                # )
+
+                # saas
+                # name = item['name']
+                # if "会员卡" in name:
+                #     xpath_expr = "//div[contains(@data-modulename, '会员卡')]"
+                # else:
+                #     xpath_expr = f"//div[@data-modulename='{name}']"
+
+                # 京通
+                name = item['name']
+                xpath_expr = f"//div[@data-modulename='{name}']"
+
+                module_element = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH, xpath_expr))
+                )
+
+                module_element.find_element(By.CLASS_NAME, "J_edit").click()
+
+                driver.find_element(By.ID, "accessKeyId").send_keys(accessKeyId)
+                driver.find_element(By.ID, "accessKeySecret").send_keys(accessKeySecret)
+                # 处理文件（重新上传文件时需要）
+                # dynamic_path = root_dir / "zipdist" / shopId / item["fileName"]
+                # dynamic_path_str = str(dynamic_path)
+                # driver.find_element(By.ID, "fileUpload").clear()
+                # driver.find_element(By.ID, "fileUpload").send_keys(dynamic_path_str)
+
+                # 选图（换图时需要）
+                # driver.execute_script(f"""
+                #          var div = document.querySelector('.J_imagePanel');
+                #          div.setAttribute('data-url', '{item["img"]}');
+                #      """)
+
+                # 选版本
+                # taro_version_dropdown = driver.find_element(By.XPATH,
+                #                                             "//span[text()='Taro 版本：']/following-sibling::div//div[contains(@class, 'cd-module-type-select')]")
+                # taro_version_dropdown.click()
+                # target_option = WebDriverWait(driver, 10).until(
+                #     EC.element_to_be_clickable((By.XPATH, f"//div[@class='sim-list']//li[@str='3.5.4']"))
+                # )
+                # target_option.click()
+
+                driver.find_element(By.CLASS_NAME, "J_btnOK").click()
+
+                time.sleep(2)
+
+            except:
+                print(f"店铺{shopId},模块{item['name']}加载失败")
+
+def main():
+    # service = Service(service_args=["--verbose"])
+    # edge_options = Options()
+    # edge_options.add_argument("--test-type")  # 禁用沙盒模式
+    # edge_options.add_argument("--disable-popup-blocking")  # 禁用弹窗阻止
+    # edge_options.add_argument("--disable-dev-shm-usage")
+    options = Options()
+    options.binary_location = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+    driver_path = str(root_dir / "msedgedriver.exe")
+    service = Service(executable_path=driver_path)
+    driver = webdriver.Edge(service=service, options=options)
+
+    try:
+        driver.get(LOGIN_URL)
+        # 登录，若 60 秒内登录成功则进行逻辑跳转
+        wait = WebDriverWait(driver, 60)
+        username_field = driver.find_element(By.ID, "loginname")
+        password_field = driver.find_element(By.ID, "nloginpwd")
+        username_field.send_keys(USERNAME)
+        password_field.send_keys(PASSWORD)
+        driver.find_element(By.ID, "loginsubmit").click()
+        # 操作登录后需手动滑动验证码
+        try:
+            wait.until(EC.url_contains(INDEX_URL))
+            print("登录成功")
+        except TimeoutException:
+            raise Exception("登录失败或超时")
+
+        # 导航到目标页面
+        driver.get(TARGET_URL)
+        edit_template(driver)
+
+    except Exception as e:
+        print(f"操作失败：{str(e)}")
+    finally:
+        # 关闭浏览器
+        input("按任意键退出...")
+        driver.quit()
+
+if __name__ == "__main__":
+    main()
