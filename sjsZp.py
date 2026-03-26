@@ -30,7 +30,7 @@ root_dir = Path(__file__).resolve().parent
 isUpdate = False
 
 operation = 'create_module'
-# 'edit_old_module' 'new_module'  'review_module' 'delete_module' 'delete_fail_module' 'create_module'
+# 'create_module'新建模块模版  'edit_old_module' 'new_module'  'review_module' 'delete_module' 'delete_fail_module'
 
 # 编辑模板
 def edit_template(driver):
@@ -45,7 +45,7 @@ def edit_template(driver):
             if operation == "create_module":
                 # create_module 不需要 templateId，直接导航到目标页面
                 driver.get(TARGET_URL)
-                create_module(driver)
+                create_module(driver, item)
             elif operation == "edit_old_module":
                 driver.get(TEMPLATEID_URL + templateId)
                 edit_old_module(driver, item["shopId"])
@@ -65,54 +65,93 @@ def edit_template(driver):
                 print(f"未知的操作：{operation}")
 
 # 创建模块（为每个店铺配置价格模板）
-def create_module(driver):
-    # 读取 JSON 配置文件
-    with open(root_dir / "zipdist" / "shopConfig.json", "r", encoding='utf-8') as file:
-        shop_config = json.load(file)
+def create_module(driver, shop_item):
+    shop_name = shop_item["shopName"]
 
-    # 遍历每个店铺配置
-    for item in shop_config:
-        shop_name = item["shopName"]
+    try:
+        # 1. 点击 btn-green-link 按钮
+        edit_button = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CLASS_NAME, "btn-green-link"))
+        )
+        edit_button.click()
+        time.sleep(1)  # 等待弹窗出现
 
-        try:
-            # 1. 点击 btn-green-link 按钮
-            edit_button = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.CLASS_NAME, "btn-green-link"))
-            )
-            edit_button.click()
-            time.sleep(1)  # 等待弹窗出现
+        # 2. 输入 shopName 到 tp-name J_tpName（先输入名称）
+        tp_name_input = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CLASS_NAME, "tp-name"))
+        )
+        tp_name_input.clear()
+        tp_name_input.send_keys(shop_name)
+        time.sleep(0.5)
 
-            # 2. 输入 shopName 到 tp-name J_tpName（先输入名称）
-            tp_name_input = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CLASS_NAME, "tp-name"))
-            )
-            tp_name_input.clear()
-            tp_name_input.send_keys(shop_name)
-            time.sleep(0.5)
+        # 3. 在弹窗中选择 value=3 的 option（tp-price J_tpType）
+        tp_type_select = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CLASS_NAME, "tp-price"))
+        )
+        select_element = tp_type_select.find_element(By.TAG_NAME, "select")
+        # 使用 Select 类处理下拉框
+        select = Select(select_element)
+        select.select_by_value("3")
+        time.sleep(0.5)
 
-            # 3. 在弹窗中选择 value=3 的 option（tp-price J_tpType）
-            tp_type_select = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CLASS_NAME, "tp-price"))
-            )
-            select_element = tp_type_select.find_element(By.TAG_NAME, "select")
-            # 使用 Select 类处理下拉框
-            select = Select(select_element)
-            select.select_by_value("3")
-            time.sleep(0.5)
+        # 4. 点击 btn-yellow J-sure 按钮
+        sure_button = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CLASS_NAME, "btn-yellow"))
+        )
+        sure_button.click()
 
-            # 4. 点击 btn-yellow J-sure 按钮
-            sure_button = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.CLASS_NAME, "btn-yellow"))
-            )
-            sure_button.click()
-            time.sleep(2)  # 等待操作完成
+        # 等待 2 秒后页面会自动跳转到新页面
+        time.sleep(2)
 
-            print(f"已完成店铺配置：{shop_name}")
+        # 获取当前 URL 并提取 templateId
+        current_url = driver.current_url
+        print(f"当前页面 URL: {current_url}")
 
-        except TimeoutException as e:
-            print(f"操作超时 - 店铺：{shop_name}, 错误：{str(e)}")
-        except Exception as e:
-            print(f"创建模块失败 - 店铺：{shop_name}, 错误：{str(e)}")
+        # 从 URL 中提取 templateId (例如：https://sdk.jd.com/nm?tpGrade=3&templateId=31261)
+        if "templateId=" in current_url:
+            # 使用 parse_qs 解析 URL 参数
+            from urllib.parse import parse_qs, urlparse
+            parsed_url = urlparse(current_url)
+            params = parse_qs(parsed_url.query)
+            template_id = params.get("templateId", [None])[0]
+
+            if template_id:
+                print(f"提取到 templateId: {template_id}")
+                # 更新传入的 shop_item 的 templateId
+                shop_item["templateId"] = template_id
+
+                # 读取完整配置文件，更新后写回
+                with open(root_dir / "zipdist" / "shopConfig.json", "r", encoding='utf-8') as f:
+                    shop_config = json.load(f)
+                for config_item in shop_config:
+                    if config_item["shopName"] == shop_name:
+                        config_item["templateId"] = template_id
+                        break
+                with open(root_dir / "zipdist" / "shopConfig.json", "w", encoding='utf-8') as f:
+                    json.dump(shop_config, f, ensure_ascii=False, indent=2)
+                print(f"已更新店铺 {shop_name} 的 templateId 到 shopConfig.json")
+            else:
+                print(f"未能在 URL 中找到 templateId 参数 - 店铺：{shop_name}")
+        else:
+            print(f"URL 中不包含 templateId 参数 - 店铺：{shop_name}, URL: {current_url}")
+
+        print(f"已完成店铺配置：{shop_name}")
+
+        # 返回目标页面，继续下一个店铺的配置
+        print("返回目标页面...")
+        driver.get(TARGET_URL)
+        time.sleep(2)  # 等待页面加载完成
+
+    except TimeoutException as e:
+        print(f"操作超时 - 店铺：{shop_name}, 错误：{str(e)}")
+        # 尝试返回目标页面继续下一个
+        driver.get(TARGET_URL)
+        time.sleep(2)
+    except Exception as e:
+        print(f"创建模块失败 - 店铺：{shop_name}, 错误：{str(e)}")
+        # 尝试返回目标页面继续下一个
+        driver.get(TARGET_URL)
+        time.sleep(2)
 
 # 提交审核
 def review_module(driver):
