@@ -29,8 +29,8 @@ root_dir = Path(__file__).resolve().parent
 # 是否为更新
 isUpdate = False
 
-operation = 'edit_old_module'
-# 'create_module'新建模块模版 'new_module'新建模块 'delete_fail_module' 删除打包失败模块  'edit_old_module' 打包旧模块   'review_module' 提审代码
+operation = 'review_module'
+# 'create_module'新建模块模版 'new_module'新建模块 'delete_fail_module' 打包失败模块重新打包  'edit_old_module' 打包旧模块   'review_module' 提审代码
 # 'delete_module' 删除指定模块
 
 # 编辑模板
@@ -532,58 +532,97 @@ def new_module(driver,shopId):
                 traceback.print_exc()
 
 # 编辑旧模块（换图，换文件，打包新版本）
-def edit_old_module(driver,shopId):
+def edit_old_module(driver, shopId):
+    # 等待页面加载完成（等待模块列表出现）
+    try:
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CLASS_NAME, "J_addModule"))
+        )
+    except TimeoutException:
+        print(f"店铺{shopId}: 等待模块列表加载超时")
+        return
+
+    time.sleep(1)  # 额外等待，确保页面完全渲染
+
     # 读取 JSON 文件并循环
-    with open("moduleConfig.json", "r", encoding='utf-8') as file:
+    with open(root_dir / "moduleConfig.json", "r", encoding='utf-8') as file:
         moduleConfig = json.load(file)
+
         for item in moduleConfig:
             try:
-                # saas
+                # 等待遮罩层消失
+                try:
+                    WebDriverWait(driver, 5).until(
+                        EC.invisibility_of_element_located((By.CLASS_NAME, "cd-modal-overlay"))
+                    )
+                except TimeoutException:
+                    pass  # 遮罩层可能不存在，继续
+
                 name = item['name']
+                print(f"店铺{shopId}: 正在编辑模块 - {name}")
+
+                # 构建 XPath 表达式
                 if "会员卡" in name:
                     xpath_expr = "//div[contains(@data-modulename, '会员卡')]"
+                elif "橱窗" in name:
+                    xpath_expr = "//div[contains(@data-modulename, '橱窗')]"
+                elif "轮播" in name:
+                    # 区分"轮播图"和"轮播弹窗"
+                    xpath_expr = f"//div[contains(@data-modulename, '轮播图')]"
+                elif "热区" in name:
+                    xpath_expr = "//div[contains(@data-modulename, '热区')]"
+                elif "积分" in name:
+                    xpath_expr = "//div[contains(@data-modulename, '积分')]"
+                elif "红包" in name:
+                    xpath_expr = "//div[contains(@data-modulename, '红包')]"
+                elif "弹窗" in name:
+                    xpath_expr = "//div[contains(@data-modulename, '弹窗')]"
+                elif "阶梯" in name:
+                    xpath_expr = "//div[contains(@data-modulename, '阶梯')]"
+                elif "促销" in name:
+                    xpath_expr = "//div[contains(@data-modulename, '促销')]"
                 else:
                     xpath_expr = f"//div[@data-modulename='{name}']"
 
-                # 京通
-                # name = item['name']
-                # xpath_expr = f"//div[@data-modulename='{name}']"
-
-                module_element = WebDriverWait(driver, 10).until(
+                # 查找模块元素
+                module_element = WebDriverWait(driver, 5).until(
                     EC.presence_of_element_located((By.XPATH, xpath_expr))
                 )
 
-                module_element.find_element(By.CLASS_NAME, "J_edit").click()
+                if not module_element:
+                    print(f"店铺{shopId}: 未找到模块 - {name}")
+                    continue
 
-                driver.find_element(By.ID, "accessKeyId").send_keys(accessKeyId)
-                driver.find_element(By.ID, "accessKeySecret").send_keys(accessKeySecret)
-                # 处理文件（重新上传文件时需要）
-                # dynamic_path = root_dir / "zipdist" / shopId / item["fileName"]
-                # dynamic_path_str = str(dynamic_path)
-                # driver.find_element(By.ID, "fileUpload").clear()
-                # driver.find_element(By.ID, "fileUpload").send_keys(dynamic_path_str)
+                # 点击编辑按钮
+                try:
+                    edit_btn = module_element.find_element(By.CLASS_NAME, "J_edit")
+                    driver.execute_script("arguments[0].click();", edit_btn)
+                except Exception as e:
+                    print(f"店铺{shopId}: 点击编辑按钮失败 - {name}, 错误：{e}")
+                    continue
 
-                # 选图（换图时需要）
-                # driver.execute_script(f"""
-                #          var div = document.querySelector('.J_imagePanel');
-                #          div.setAttribute('data-url', '{item["img"]}');
-                #      """)
+                time.sleep(0.5)
 
-                # 选版本
-                # taro_version_dropdown = driver.find_element(By.XPATH,
-                #                                             "//span[text()='Taro 版本：']/following-sibling::div//div[contains(@class, 'cd-module-type-select')]")
-                # taro_version_dropdown.click()
-                # target_option = WebDriverWait(driver, 10).until(
-                #     EC.element_to_be_clickable((By.XPATH, f"//div[@class='sim-list']//li[@str='3.5.4']"))
-                # )
-                # target_option.click()
+                # 填写 AK/SK
+                try:
+                    driver.find_element(By.ID, "accessKeyId").send_keys(accessKeyId)
+                    driver.find_element(By.ID, "accessKeySecret").send_keys(accessKeySecret)
+                except Exception as e:
+                    print(f"店铺{shopId}: 填写 AK/SK 失败 - {name}, 错误：{e}")
 
-                driver.find_element(By.CLASS_NAME, "J_btnOK").click()
+                # 点击确认按钮
+                try:
+                    confirm_btn = driver.find_element(By.CLASS_NAME, "J_btnOK")
+                    driver.execute_script("arguments[0].click();", confirm_btn)
+                except Exception as e:
+                    print(f"店铺{shopId}: 点击确认按钮失败 - {name}, 错误：{e}")
+                    continue
 
                 time.sleep(2)
+                print(f"店铺{shopId}: 模块编辑成功 - {name}")
 
-            except:
-                print(f"店铺{shopId},模块{item['name']}加载失败")
+            except Exception as e:
+                print(f"店铺{shopId}: 模块加载失败 - {item['name']}, 错误：{e}")
 
 def main():
     # service = Service(service_args=["--verbose"])
