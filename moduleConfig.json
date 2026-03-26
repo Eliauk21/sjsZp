@@ -1,0 +1,62 @@
+[
+  {
+    "name": "会员卡模块",
+    "fileName": "CommonMemberCard.zip",
+    "isMemberCard": true,
+    "img": "https://img14.360buyimg.com/zx/jfs/t1/55511/25/23097/12683/658bef57F433950be/804cb2e4d371dc52.png"
+  },
+  {
+    "name": "轮播图",
+    "fileName": "CommonCascader.zip",
+    "isMemberCard": false,
+    "img": "https://img30.360buyimg.com/zx/jfs/t1/232640/7/9152/12701/658bef57F4c147b00/e4218d32f7c9f22e.png"
+  },
+  {
+    "name": "热区图",
+    "fileName": "CommonHotZone.zip",
+    "isMemberCard": false,
+    "img": "https:////img20.360buyimg.com/zx/jfs/t1/243203/12/1052/12868/658bef57F389541be/a26d4d836eba5a14.png"
+  },
+  {
+    "name": "积分兑换",
+    "fileName": "CommonPointsExchange.zip",
+    "isMemberCard": false,
+    "img": "https://img12.360buyimg.com/zx/jfs/t1/227384/15/10518/12611/658bef57F85343b92/72536a9583ba9e8c.png"
+  },
+ {
+    "name": "红包雨",
+    "fileName": "Hongbaoyu.zip",
+    "isMemberCard": false,
+    "img": "https://img30.360buyimg.com/zx/jfs/t1/290605/12/9382/4921/68342957F42dc6c66/b4205e4ed649afc1.jpg"
+  },
+  {
+    "name": "轮播弹窗",
+    "fileName": "CascadeFloat.zip",
+    "isMemberCard": false,
+    "img": "https://img11.360buyimg.com/zx/jfs/t1/286347/26/5660/5000/68342960Fa916ce95/a5df4a17c299e0d5.jpg"
+  },
+  {
+    "name": "开屏弹窗",
+    "fileName": "PopUpAd.zip",
+    "isMemberCard": false,
+    "img": "https://img30.360buyimg.com/zx/jfs/t1/299797/13/10011/4931/6834295bFc98a5542/271b8c6e3bd1cfd6.jpg"
+  },
+  {
+    "name": "阶梯礼",
+    "fileName": "StepsGift.zip",
+    "isMemberCard": false,
+    "img": "https://img12.360buyimg.com/zx/jfs/t1/301758/22/9403/5028/68342671F5b44b73e/53bddd8a85d5117d.jpg"
+  },
+ {
+    "name": "促销横幅",
+    "fileName": "FloatCoupon.zip",
+    "isMemberCard": false,
+    "img": "https://img11.360buyimg.com/zx/jfs/t1/300578/1/14835/5169/684bc5e6F0c5227c2/6e55f4a11b1439f1.jpg"
+  },
+ {
+    "name": "超级橱窗",
+    "fileName": "Showcase.zip",
+    "isMemberCard": false,
+    "img": "https://img20.360buyimg.com/zx/jfs/t1/339495/23/19674/5456/68edb619Ffe009bd0/75438375a580a921.jpg"
+  }
+]

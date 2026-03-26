@@ -29,7 +29,7 @@ root_dir = Path(__file__).resolve().parent
 # 是否为更新
 isUpdate = False
 
-operation = 'new_module'
+operation = 'create_module'
 # 'edit_old_module' 'new_module'  'review_module' 'delete_module' 'delete_fail_module' 'create_module'
 
 # 编辑模板
