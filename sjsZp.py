@@ -31,8 +31,8 @@ isUpdate = False
 
 operation = 'edit_old_module'
 # 'check_orderId' 店铺订购预审核
-# 'create_module'新建模块模版 'new_module'新建模块 'delete_fail_module' 打包失败模块重新打包  'edit_old_module' 打包旧模块  'review_new_module' 提审新模块
-# 'delete_module' 删除指定模块
+# 'create_module'新建模版 'new_module'新建模块 'delete_fail_module' 失败模块重新打包  'edit_old_module' 打包高版本模块
+# 'delete_module' 删除指定模块 'review_module' 提审模块
 
 # 编辑模板
 def edit_template(driver):
@@ -53,25 +53,26 @@ def edit_template(driver):
                 # create_module 不需要 templateId，直接导航到目标页面
                 driver.get(TARGET_URL)
                 create_module(driver, item)
-            elif operation == "edit_old_module":
-                driver.get(TEMPLATEID_URL + templateId)
-                edit_old_module(driver, item["shopId"])
             elif operation == "new_module":
                 driver.get(TEMPLATEID_URL + templateId)
                 new_module(driver, item["shopId"])
+            elif operation == "delete_fail_module":
+                driver.get(TEMPLATEID_URL + templateId)
+                delete_fail_module(driver)
+            elif operation == "edit_old_module":
+                driver.get(TEMPLATEID_URL + templateId)
+                edit_old_module(driver, item["shopId"])
             elif operation == "delete_module":
                 driver.get(TEMPLATEID_URL + templateId)
                 delete_module(driver, item["shopId"])
             elif operation == "review_module":
                 driver.get(TEMPLATEID_URL + templateId)
                 review_module(driver)
-            elif operation == "delete_fail_module":
-                driver.get(TEMPLATEID_URL + templateId)
-                delete_fail_module(driver)
+
             else:
                 print(f"未知的操作：{operation}")
 
-# 创建模块（为每个店铺配置价格模板）
+# 创建模版（为每个店铺配置定制模板）
 def create_module(driver, shop_item):
     shop_name = shop_item["shopName"]
 
@@ -289,8 +290,7 @@ def review_module(driver):
     except Exception as e:
         print(f"审核模块失败：{str(e)}")
 
-
-# 失败删除
+# 删除模版
 def delete_module(driver, shopId):
     try:
         time.sleep(1)
@@ -341,9 +341,7 @@ def delete_module(driver, shopId):
     except Exception as e:
         print(f"自动化过程出错 final: {shopId}")
 
-
-
-# 失败删除并重新创建
+# 打包失败删除并重新创建
 def delete_fail_module(driver):
     try:
         # 等待页面加载完成（等待模块列表出现）
@@ -460,7 +458,6 @@ def delete_fail_module(driver):
     except Exception as e:
         print(f"自动化过程出错：{e}")
 
-
 # 重新创建模块
 def recreate_module(driver, shop_id, module_item):
     """根据模块配置重新创建模块"""
@@ -547,9 +544,7 @@ def recreate_module(driver, shop_id, module_item):
     except Exception as e:
         print(f"重新创建模块失败 - {module_item['name']}: {e}")
 
-
-
-# 全部模块打包
+# 打包模块v3版本
 def new_module(driver,shopId):
     # 获取要添加的模块
     with open("moduleConfig.json", "r", encoding='utf-8') as file:
@@ -643,7 +638,7 @@ def new_module(driver,shopId):
                 import traceback
                 traceback.print_exc()
 
-# 编辑旧模块（换图，换文件，打包新版本）
+# 打包模块v4版本（还可以进行换图，换文件）
 def edit_old_module(driver, shopId):
     # 等待页面加载完成（等待模块列表出现）
     try:
