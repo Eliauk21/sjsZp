@@ -29,8 +29,9 @@ root_dir = Path(__file__).resolve().parent
 # 是否为更新
 isUpdate = False
 
-operation = 'review_module'
-# 'create_module'新建模块模版 'new_module'新建模块 'delete_fail_module' 打包失败模块重新打包  'edit_old_module' 打包旧模块   'review_module' 提审代码
+operation = 'edit_old_module'
+# 'check_orderId' 店铺订购预审核
+# 'create_module'新建模块模版 'new_module'新建模块 'delete_fail_module' 打包失败模块重新打包  'edit_old_module' 打包旧模块  'review_new_module' 提审新模块
 # 'delete_module' 删除指定模块
 
 # 编辑模板
@@ -38,6 +39,11 @@ def edit_template(driver):
     # 读取 JSON 文件并循环
     with open(root_dir / "zipdist" /"shopConfig.json", "r", encoding='utf-8') as file:
         shopConfig = json.load(file)
+
+    # 新建提审操作特殊处理：只需要调用一次，方法内部会遍历所有店铺
+    if operation == "check_orderId":
+        check_orderId(driver)
+        return
 
     # 遍历 json 格式的 shopConfig
     for item in shopConfig:
@@ -153,6 +159,112 @@ def create_module(driver, shop_item):
         # 尝试返回目标页面继续下一个
         driver.get(TARGET_URL)
         time.sleep(2)
+
+
+# 订单预审
+def check_orderId(driver):
+    """
+    提审流程：
+    1. 导航到订单管理页面，输入 shopId 搜索
+    2. 获取表格第一行第一列的模板 ID
+    3. 点击创建按钮，填写模板信息
+    4. 导航到模板编辑页面提交审核
+    """
+    try:
+        # 读取 shopConfig.json 获取所有店铺（只在开始时读取一次）
+        shop_config_path = root_dir / "zipdist" / "shopConfig.json"
+        with open(shop_config_path, "r", encoding='utf-8') as file:
+            shop_config = json.load(file)
+
+        # 订单管理页面 URL
+        order_management_url = "https://sjs-zx.jd.com/rnTemplate/order-management.html"
+
+        # 标记是否有更新
+        has_update = False
+
+        for shop_item in shop_config:
+            # # 如果已经有 templateId，则跳过
+            # if shop_item.get("templateId"):
+            #     print(f"\n=== 店铺 {shop_item['shopName']} 已有模板 ID: {shop_item['templateId']}，跳过 ===")
+            #     continue
+
+            shop_id = shop_item["shopId"]
+            shop_name = shop_item["shopName"]
+            print(f"\n=== 开始处理店铺：{shop_name} ({shop_id}) ===")
+
+            try:
+                # 1. 导航到订单管理页面
+                driver.get(order_management_url)
+                time.sleep(2)
+
+                # 2. 输入 shopId - 修复 XPath：先找到包含"店铺 ID"文本的父元素，再查找其下的 input
+                shop_id_label = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH, "//div[contains(text(), '店铺ID：')]"))
+                )
+                shop_id_input = shop_id_label.find_element(By.XPATH, ".//following-sibling::input[@type='number'] | .//input[@type='number'] | .//following-sibling::*//input[@type='number']")
+                shop_id_input.clear()
+                shop_id_input.send_keys(shop_id)
+                print(f"已输入 shopId: {shop_id}")
+                time.sleep(0.5)
+
+                # 3. 点击搜索按钮 - 先找到"搜索"span，再点击其父级 button
+                time.sleep(1)
+                search_btn = WebDriverWait(driver, 5).until(
+                    EC.element_to_be_clickable((By.CLASS_NAME, "ant-btn"))
+                )
+                search_btn.click()
+                print("已点击搜索按钮")
+                time.sleep(2)
+
+                # 4. 等待表格出现，并获取 tbody 中第一个 tr 的第一个 td 的内容
+                try:
+                    # 等待 tbody 出现，最多等待 10 秒
+                    tbody = WebDriverWait(driver, 10).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, "div.ant-table-body tbody.ant-table-tbody"))
+                    )
+                    print("表格已加载")
+
+                    # 获取 tbody 中第一个 tr
+                    first_tr = tbody.find_element(By.CSS_SELECTOR, "tr.ant-table-row-level-0")
+
+                    # 获取第一个 tr 中第一个 td 的内容
+                    first_td = first_tr.find_element(By.CSS_SELECTOR, "td:first-child")
+                    orderId = first_td.text.strip()
+
+                    print(f"从表格中获取到订单 ID: {orderId}")
+
+                    # 更新 shop_item 的 templateId
+                    shop_item["orderId"] = orderId
+                    has_update = True
+                    print(f"已更新店铺 {shop_name} 的 orderId (内存中)")
+
+                except TimeoutException:
+                    # 没有表格出现，说明该店铺没有模板记录
+                    print(f"警告：店铺 {shop_name} 搜索后未出现表格，可能没有模板记录")
+                    continue
+                except Exception as e:
+                    print(f"店铺 {shop_name} 获取表格数据失败：{e}")
+                    continue
+
+            except Exception as e:
+                print(f"店铺 {shop_name} 处理失败：{e}")
+                import traceback
+                traceback.print_exc()
+                # 继续处理下一个店铺
+                continue
+
+        # 所有店铺处理完成后，一次性写入 shopConfig.json
+        if has_update:
+            with open(shop_config_path, "w", encoding='utf-8') as f:
+                json.dump(shop_config, f, ensure_ascii=False, indent=2)
+            print("\n=== 已保存更新到 shopConfig.json ===")
+
+        print("\n=== 所有店铺提审完成 ===")
+
+    except Exception as e:
+        print(f"审核模块失败：{str(e)}")
+        import traceback
+        traceback.print_exc()
 
 # 提交审核
 def review_module(driver):
