@@ -9,6 +9,10 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.edge.options import Options
 from selenium.webdriver.edge.service import Service
+import json
+from typing import Optional
+from PIL import Image, ImageDraw, ImageFont
+from pathlib import Path
 
 # 配置信息
 LOGIN_URL = "https://passport.jd.com/new/login.aspx?ReturnUrl=https%3A%2F%2Fsjs-zx.jd.com"
@@ -29,8 +33,8 @@ root_dir = Path(__file__).resolve().parent
 # 是否为更新
 isUpdate = False
 
-operation = 'edit_old_module'
-# 'check_orderId' 店铺订购预审核
+operation = 'check_orderId'
+# 'check_orderId' 店铺订购预审核   'generate_image'创建图片
 # 'create_module'新建模版 'new_module'新建模块 'delete_fail_module' 失败模块重新打包  'edit_old_module' 打包高版本模块
 # 'delete_module' 删除指定模块 'review_module' 提审模块
 
@@ -71,6 +75,173 @@ def edit_template(driver):
 
             else:
                 print(f"未知的操作：{operation}")
+
+def create_image(
+    text: str = "Hello",
+    bg_color: str = "#ffffff",
+    text_color: str = "#000000",
+    border_color: str = "#000000",
+    width: int = 640,
+    height: int = 914,
+    border_width: int = 20,
+    font_size: int = 48,
+    font_path: Optional[str] = None,
+    output_dir: str = ".",
+    filename_prefix: Optional[str] = None,
+) -> Path:
+    """
+    生成带围边的图片
+
+    Args:
+        text: 图片中心的文字
+        bg_color: 背景颜色 (HEX 格式，如 #ffffff)
+        text_color: 文字颜色 (HEX 格式)
+        border_color: 围边颜色 (HEX 格式)
+        width: 图片宽度 (包含围边)
+        height: 图片高度 (包含围边)
+        border_width: 围边宽度 (像素)
+        font_size: 文字大小 (像素)
+        font_path: 字体文件路径，默认使用系统字体
+        output_dir: 输出目录
+
+    Returns:
+        生成图片的路径
+    """
+    # 计算内容区域 (去除围边)
+    inner_width = width - 2 * border_width
+    inner_height = height - 2 * border_width
+
+    # 创建图片 (先画围边背景)
+    img = Image.new("RGB", (width, height), border_color)
+
+    # 绘制内部背景
+    draw = ImageDraw.Draw(img)
+    inner_rect = [
+        border_width,
+        border_width,
+        width - border_width,
+        height - border_width,
+    ]
+    draw.rectangle(inner_rect, fill=bg_color)
+
+    # 加载字体
+    if font_path:
+        try:
+            font = ImageFont.truetype(font_path, font_size)
+        except Exception:
+            font = ImageFont.load_default()
+    else:
+        # 尝试加载中文字体
+        system_fonts = [
+            "C:/Windows/Fonts/simhei.ttf",      # 黑体
+            "C:/Windows/Fonts/simsun.ttc",      # 宋体
+            "C:/Windows/Fonts/msyh.ttc",        # 微软雅黑
+            "/System/Library/Fonts/PingFang.ttc",  # macOS 苹方
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        ]
+        font = ImageFont.load_default()
+        for font_file in system_fonts:
+            try:
+                font = ImageFont.truetype(font_file, font_size)
+                break
+            except Exception:
+                continue
+
+    # 计算文字位置 (居中)
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+
+    text_x = (inner_width - text_width) // 2 + border_width
+    text_y = (inner_height - text_height) // 2 + border_width
+
+    # 绘制文字
+    draw.text((text_x, text_y), text, fill=text_color, font=font)
+
+    # 生成文件名
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    # 创建文件名
+    prefix = filename_prefix if filename_prefix else "".join(c if c.isalnum() or c in "-_." else "_" for c in text[:20])
+    filename = f"{prefix}.png"
+    filepath = output_path / filename
+
+    # 保存图片
+    img.save(filepath, "PNG")
+    print(f"  已生成：{filepath}")
+
+    return filepath
+
+
+def generate_batch(
+    config_path: str = "shopConfig.json",
+    output_subdir: str = "image",
+    bg_color: str = "#ffffff",
+    text_color: str = "#000000",
+    border_color: str = "#000000",
+    border_width: int = 20,
+    font_size: int = 40,
+) -> list:
+    """
+    批量生成图片
+
+    Args:
+        config_path: shopConfig.json 文件路径
+        output_subdir: 输出子目录名 (默认：image)
+        bg_color: 背景颜色
+        text_color: 文字颜色
+        border_color: 围边颜色
+        border_width: 围边宽度
+        font_size: 文字大小
+
+    Returns:
+        生成的图片路径列表
+    """
+    # 读取配置文件
+    config_file = Path(config_path)
+    if not config_file.exists():
+        print(f"配置文件不存在：{config_file}")
+        return []
+
+    with open(config_file, "r", encoding="utf-8") as f:
+        shop_config = json.load(f)
+
+    # 创建输出目录 (同级目录下的 image 文件夹)
+    output_dir = config_file.parent / output_subdir
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"开始生成 {len(shop_config)} 张图片...")
+    print(f"输出目录：{output_dir}")
+    print(f"尺寸：640 x 914")
+    print("-" * 50)
+
+    generated_files = []
+
+    for item in shop_config:
+        shop_id = item.get("shopId", "unknown")
+        shop_name = item.get("shopName", "Unknown")
+        try:
+            filepath = create_image(
+                text=shop_name,
+                bg_color=bg_color,
+                text_color=text_color,
+                border_color=border_color,
+                width=640,
+                height=914,
+                border_width=border_width,
+                font_size=font_size,
+                output_dir=str(output_dir),
+                filename_prefix=shop_id,
+            )
+            generated_files.append(filepath)
+        except Exception as e:
+            print(f"  生成失败 [{shop_name}]: {e}")
+
+    print("-" * 50)
+    print(f"完成！共生成 {len(generated_files)}/{len(shop_config)} 张图片")
+
+    return generated_files
 
 # 创建模版（为每个店铺配置定制模板）
 def create_module(driver, shop_item):
@@ -732,43 +903,57 @@ def edit_old_module(driver, shopId):
                 print(f"店铺{shopId}: 模块加载失败 - {item['name']}, 错误：{e}")
 
 def main():
-    # service = Service(service_args=["--verbose"])
-    # edge_options = Options()
-    # edge_options.add_argument("--test-type")  # 禁用沙盒模式
-    # edge_options.add_argument("--disable-popup-blocking")  # 禁用弹窗阻止
-    # edge_options.add_argument("--disable-dev-shm-usage")
-    options = Options()
-    options.binary_location = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
-    driver_path = str(root_dir / "msedgedriver.exe")
-    service = Service(executable_path=driver_path)
-    driver = webdriver.Edge(service=service, options=options)
+    if operation == "generate_image":
+        # 批量生成模式（默认）
+        generate_batch(
+            config_path=root_dir / "zipdist" / "shopConfig.json",
+            output_subdir="image",
+            bg_color="#ffffff",
+            text_color="#000000",
+            border_color="#000000",
+            border_width=20,
+            font_size=40,
+        )
+    else:
+        # service = Service(service_args=["--verbose"])
+        # edge_options = Options()
+        # edge_options.add_argument("--test-type")  # 禁用沙盒模式
+        # edge_options.add_argument("--disable-popup-blocking")  # 禁用弹窗阻止
+        # edge_options.add_argument("--disable-dev-shm-usage")
+        options = Options()
+        options.binary_location = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+        # 使用独立的浏览器配置文件，允许同时运行多个浏览器实例
+        options.add_argument(f"--user-data-dir={root_dir / 'edge_profile'}")
+        driver_path = str(root_dir / "msedgedriver.exe")
+        service = Service(executable_path=driver_path)
+        driver = webdriver.Edge(service=service, options=options)
 
-    try:
-        driver.get(LOGIN_URL)
-        # 登录，若 60 秒内登录成功则进行逻辑跳转
-        wait = WebDriverWait(driver, 60)
-        username_field = driver.find_element(By.ID, "loginname")
-        password_field = driver.find_element(By.ID, "nloginpwd")
-        username_field.send_keys(USERNAME)
-        password_field.send_keys(PASSWORD)
-        driver.find_element(By.ID, "loginsubmit").click()
-        # 操作登录后需手动滑动验证码
         try:
-            wait.until(EC.url_contains(INDEX_URL))
-            print("登录成功")
-        except TimeoutException:
-            raise Exception("登录失败或超时")
+            driver.get(LOGIN_URL)
+            # 登录，若 60 秒内登录成功则进行逻辑跳转
+            wait = WebDriverWait(driver, 60)
+            username_field = driver.find_element(By.ID, "loginname")
+            password_field = driver.find_element(By.ID, "nloginpwd")
+            username_field.send_keys(USERNAME)
+            password_field.send_keys(PASSWORD)
+            driver.find_element(By.ID, "loginsubmit").click()
+            # 操作登录后需手动滑动验证码
+            try:
+                wait.until(EC.url_contains(INDEX_URL))
+                print("登录成功")
+            except TimeoutException:
+                raise Exception("登录失败或超时")
 
-        # 导航到目标页面
-        driver.get(TARGET_URL)
-        edit_template(driver)
+            # 导航到目标页面
+            driver.get(TARGET_URL)
+            edit_template(driver)
 
-    except Exception as e:
-        print(f"操作失败：{str(e)}")
-    finally:
-        # 关闭浏览器
-        input("按任意键退出...")
-        driver.quit()
+        except Exception as e:
+            print(f"操作失败：{str(e)}")
+        finally:
+            # 关闭浏览器
+            input("按任意键退出...")
+            driver.quit()
 
 if __name__ == "__main__":
     main()
