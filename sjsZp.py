@@ -30,7 +30,7 @@ USERNAME = "陆泽科技"
 PASSWORD = "bA6#aA1$pG2%"
 root_dir = Path(__file__).resolve().parent
 
-operation = 'review_new_module'
+operation = 'check_orderId'
 # 'check_orderId' 店铺订购预审核   'generate_image'创建图片
 # 'create_module'新建模版 'new_module'新建模块 'delete_fail_module' 失败模块重新打包  'edit_old_module' 打包高版本模块  'review_new_module'初次审核模拟
 # 'delete_module' 删除指定模块 'review_module' 提审模块
@@ -1052,8 +1052,8 @@ def main():
         options.binary_location = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
         # 使用独立的浏览器配置文件，允许同时运行多个浏览器实例
         options.add_argument(f"--user-data-dir={root_dir / 'edge_profile'}")
-        driver_path = str(root_dir / "msedgedriver.exe")
-        service = Service(executable_path=driver_path)
+        # Selenium 4.6+ 会自动管理 EdgeDriver，无需手动指定路径
+        service = Service()
         driver = webdriver.Edge(service=service, options=options)
 
         try:
