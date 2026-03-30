@@ -29,13 +29,10 @@ accessKeySecret="02DB4A15CEDF23B8CE32E03EF06E0A73"
 USERNAME = "陆泽科技"
 PASSWORD = "bA6#aA1$pG2%"
 root_dir = Path(__file__).resolve().parent
-# root_dir='D:\\project\\ai-sms-review\\sjsZp\\'
-# 是否为更新
-isUpdate = False
 
-operation = 'check_orderId'
+operation = 'review_new_module'
 # 'check_orderId' 店铺订购预审核   'generate_image'创建图片
-# 'create_module'新建模版 'new_module'新建模块 'delete_fail_module' 失败模块重新打包  'edit_old_module' 打包高版本模块
+# 'create_module'新建模版 'new_module'新建模块 'delete_fail_module' 失败模块重新打包  'edit_old_module' 打包高版本模块  'review_new_module'初次审核模拟
 # 'delete_module' 删除指定模块 'review_module' 提审模块
 
 # 编辑模板
@@ -72,6 +69,9 @@ def edit_template(driver):
             elif operation == "review_module":
                 driver.get(TEMPLATEID_URL + templateId)
                 review_module(driver)
+            elif operation == "review_new_module":
+                driver.get(TEMPLATEID_URL + templateId)
+                review_new_module(driver, item)
 
             else:
                 print(f"未知的操作：{operation}")
@@ -433,6 +433,134 @@ def check_orderId(driver):
 
         print("\n=== 所有店铺提审完成 ===")
 
+    except Exception as e:
+        print(f"审核模块失败：{str(e)}")
+        import traceback
+        traceback.print_exc()
+
+# 新店铺提交审核
+def review_new_module(driver, shop_item):
+    """
+    新店铺提审流程：
+    1. 上传对应店铺的图片
+    2. 根据 orderId 找到订单
+    3. 提交审核
+
+    Args:
+        driver: Selenium WebDriver
+        shop_item: 店铺配置项，包含 shopId, shopName, orderId 等信息
+    """
+
+    try:
+
+        edit_button = driver.find_element(By.CLASS_NAME, "J_save")
+        if edit_button:
+            edit_button.click()
+
+            # 等待新窗口打开（假设点击后弹出新窗口）
+            WebDriverWait(driver, 10).until(EC.new_window_is_opened)
+
+            shop_id = shop_item.get("shopId")
+            order_id = shop_item.get("orderId")
+            shop_name = shop_item.get("shopName")
+
+            print(f"\n=== 当前店铺：{shop_name} (shopId: {shop_id}) ===")
+
+            # ========== 1. 上传店铺图片 ==========
+            print("开始上传店铺图片...")
+
+            try:
+                # 定位上传按钮的父元素 span.fileinput-button
+                upload_button = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "span.fileinput-button"))
+                )
+
+                # 在父元素内查找 input[type="file"] 元素
+                file_input = upload_button.find_element(By.CSS_SELECTOR, "input[type='file']")
+
+                # 构建图片路径（图片统一存放在 zipdist/image/目录下）
+                image_path = root_dir / "zipdist" / "image" / f"{shop_id}.png"
+                image_path_str = str(image_path)
+
+                print(f"图片路径：{image_path_str}")
+
+                # 上传文件
+                file_input.send_keys(image_path_str)
+                print("图片上传成功")
+
+                time.sleep(3)
+
+                # 等待上传成功弹窗出现并关闭
+                try:
+                    # 等待弹窗出现
+                    close_btn = WebDriverWait(driver, 10).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, "a.icon-close.J-close"))
+                    )
+                    close_btn.click()
+                    print("已关闭上传成功弹窗")
+                    time.sleep(1)
+                except TimeoutException:
+                    print("未检测到上传成功弹窗")
+
+            except TimeoutException:
+                print("未找到上传按钮，可能图片已上传")
+            except Exception as e:
+                print(f"图片上传失败：{e}")
+
+            # ========== 2. 根据 orderId 搜索订单 ==========
+            print("开始搜索订单...")
+
+            try:
+                # 等待 orderId 输入框出现
+                order_id_input = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.ID, "J_orderId"))
+                )
+
+                # 清空输入框并输入 orderId
+                order_id_input.clear()
+                if order_id:
+                    order_id_input.send_keys(order_id)
+                    print(f"已输入订单编号：{order_id}")
+                else:
+                    print(f"警告：当前店铺未配置 orderId")
+                    return
+
+                time.sleep(0.5)
+
+                # 点击搜索按钮
+                search_button = WebDriverWait(driver, 5).until(
+                    EC.element_to_be_clickable((By.ID, "J_search"))
+                )
+                search_button.click()
+                print("已点击搜索按钮")
+
+                # 等待搜索结果
+                time.sleep(2)
+
+            except TimeoutException:
+                print("未找到订单搜索区域")
+            except Exception as e:
+                print(f"订单搜索失败：{e}")
+
+            # ========== 3. 提交审核 ==========
+            print("开始提交审核...")
+
+            try:
+                # 等待提交按钮出现并点击
+                submit_button = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.ID, "J_submit"))
+                )
+                submit_button.click()
+                print("已点击提交按钮")
+                time.sleep(5)
+                print("审核提交完成")
+
+            except TimeoutException:
+                print("未找到提交按钮或提交流程超时")
+            except Exception as e:
+                print(f"提交审核失败：{e}")
+
+            print(f"=== 店铺 {shop_name} 处理完成 ===\n")
     except Exception as e:
         print(f"审核模块失败：{str(e)}")
         import traceback
@@ -932,10 +1060,17 @@ def main():
             driver.get(LOGIN_URL)
             # 登录，若 60 秒内登录成功则进行逻辑跳转
             wait = WebDriverWait(driver, 60)
+
+            # 清空用户名输入框（防止浏览器缓存自动填充导致重复输入）
             username_field = driver.find_element(By.ID, "loginname")
-            password_field = driver.find_element(By.ID, "nloginpwd")
+            username_field.clear()
             username_field.send_keys(USERNAME)
+
+            # 清空密码输入框（防止浏览器缓存自动填充导致重复输入）
+            password_field = driver.find_element(By.ID, "nloginpwd")
+            password_field.clear()
             password_field.send_keys(PASSWORD)
+
             driver.find_element(By.ID, "loginsubmit").click()
             # 操作登录后需手动滑动验证码
             try:
